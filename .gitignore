@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
+.vscode
+*.pth
 data/
 checkpoints/
 examples/
 example_output/
+ColorAnything/dinov3/

@@ -5,7 +5,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 
 class COCOColorInversionDataset(Dataset):
-    def __init__(self, img_dir, input_size=644):
+    def __init__(self, img_dir, input_size=224):
         self.img_dir = img_dir
         self.img_names = [f for f in os.listdir(img_dir) if f.endswith('.jpg')]
         self.input_size = input_size
@@ -56,7 +56,7 @@ class COCOColorInversionDataset(Dataset):
 
         return grey, label
     
-def cocoloader(img_dir, batch_size=16, shuffle=True, num_workers=4, input_size=644):
+def cocoloader(img_dir, batch_size=16, shuffle=True, num_workers=4, input_size=224):
     dataset = COCOColorInversionDataset(img_dir, input_size=input_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
     return dataloader
