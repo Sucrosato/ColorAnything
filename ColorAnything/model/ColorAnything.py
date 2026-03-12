@@ -23,7 +23,7 @@ class ColorAnything(nn.Module):
         return self.model(x)
     
     @torch.no_grad()
-    def infer_image(self, raw_image, input_size=224, compare=False): #
+    def infer_image(self, raw_image, input_size=518, compare=False): #
         grey, (h, w) = self.image2tensor(raw_image, input_size)
         
         if len(grey.shape) == 3:
