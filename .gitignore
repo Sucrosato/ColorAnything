@@ -2,8 +2,8 @@ __pycache__/
 *.pyc
 .vscode
 *.pth
-data/
+/data/
 checkpoints/
 examples/
 example_output/
-ColorAnything/dinov3/
+ColorAnything/dinov3/notebooks/
