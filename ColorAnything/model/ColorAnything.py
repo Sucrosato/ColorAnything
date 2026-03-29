@@ -36,6 +36,7 @@ class ColorAnything(nn.Module):
         pred = (pred * 255.0).astype('uint8') # to [0, 255]
         pred = np.squeeze(pred, axis=0)
         pred = np.transpose(pred, (1, 2, 0))
+        pred = cv2.cvtColor(pred, cv2.COLOR_RGB2BGR)
         return pred
 
     def image2tensor(self, raw_image, input_size=224):        
