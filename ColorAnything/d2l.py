@@ -1506,6 +1506,7 @@ def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs,
         animator = d2l.Animator(xlabel='epoch', xlim=[0, num_epochs], ylim=[0, 1], #
                                 legend=['train loss', 'train absrel_score', 'test absrel_score'])
     net = nn.DataParallel(net, device_ids=devices).to(devices[0])
+    train_loss, train_accs, test_accs = [], [], []#
     for epoch in range(num_epochs):
         # Sum of training loss, sum of training accuracy, no. of examples,
         # no. of predictions
@@ -1523,12 +1524,16 @@ def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs,
         test_acc = d2l.evaluate_accuracy_gpu(net, test_iter)
         if animation:
             animator.add(epoch + 1, (None, None, test_acc))
+        train_loss.append(metric[0] / metric[2])
+        train_accs.append(metric[1] / metric[3])
+        test_accs.append(test_acc)
     print(f'loss {metric[0] / metric[2]:.3f}, train absrel_score '
           f'{metric[1] / metric[3]:.3f}, test absrel_score {test_acc:.3f}')
     print(f'{metric[2] * num_epochs / timer.sum():.1f} examples/sec on '
           f'{str(devices)}')
     #add
-    return metric[0] / metric[2], metric[1] / metric[3], test_acc
+    # return metric[0] / metric[2], metric[1] / metric[3], test_acc
+    return train_loss, train_accs, test_accs
 
 d2l.DATA_HUB['hotdog'] = (d2l.DATA_URL + 'hotdog.zip',
                          'fba480ffa8aa7e0febbb511d181409f899b9baa5')
@@ -3198,7 +3203,7 @@ def accuracy(y_hat, y):
     cmp = d2l.astype(y_hat, y.dtype) == y
     return float(d2l.reduce_sum(d2l.astype(cmp, y.dtype)))
 #
-def absrel_score(y_hat, y, threshold = 5, need_denorm=True):
+def absrel_score(y_hat, y, threshold = 5, need_denorm=False):
     with torch.no_grad():
         if need_denorm:
             denorm = lambda x: ((x * 0.224 + 0.456) * 255).clamp(0, 255).to(torch.uint8).to(torch.float32)  

@@ -13,10 +13,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ColorAnything')
     
     parser.add_argument('--img-path', type=str)
-    parser.add_argument('--input-size', type=int, default=640)
+    parser.add_argument('--input-size', type=int, default=224)
     parser.add_argument('--outdir', type=str, default='./vis_depth')
-    
     parser.add_argument('--checkpoint', type=str)
+    parser.add_argument('--mode', type=str)
     
     # parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
     # parser.add_argument('--channel-only', dest='channel_only', action='store_true', help='only display the predicted channel')
@@ -34,8 +34,8 @@ if __name__ == '__main__':
     # }
     
     # model = RGBAnything(**model_configs[args.encoder])
-    model = ColorAnything()
-    model.load_state_dict(torch.load(f'checkpoints/{args.checkpoint}.pth', map_location='cpu'))
+    model = ColorAnything(mode=args.mode)
+    model.load_state_dict(torch.load(f'checkpoints/{args.mode}/{args.checkpoint}.pth', map_location='cpu'))
     model = model.to(DEVICE).eval()
     
     if os.path.isfile(args.img_path):
@@ -46,7 +46,7 @@ if __name__ == '__main__':
             filenames = [args.img_path]
     else:
         filenames = glob.glob(os.path.join(args.img_path, '**/*'), recursive=True)
-    
+    print(filenames)
     os.makedirs(args.outdir, exist_ok=True)
     
     # cmap = matplotlib.colormaps.get_cmap('Spectral_r')
