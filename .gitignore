@@ -7,3 +7,6 @@ checkpoints/
 examples/
 example_output/
 ColorAnything/dinov3/notebooks/
+*.log
+*.png
+*.jpg
