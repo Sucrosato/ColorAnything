@@ -8,6 +8,7 @@ omegaconf
 opencv-python-headless
 pandas
 Pillow
+pytorch-fid
 regex
 requests
 scikit-learn

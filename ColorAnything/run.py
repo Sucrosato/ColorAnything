@@ -1,7 +1,6 @@
 import argparse
 import cv2
 import glob
-import matplotlib
 import numpy as np
 import os
 import torch
@@ -14,26 +13,16 @@ if __name__ == '__main__':
     
     parser.add_argument('--img-path', type=str)
     parser.add_argument('--input-size', type=int, default=224)
+    parser.add_argument('--output-size', type=int, default=0)
     parser.add_argument('--outdir', type=str, default='./vis_depth')
-    parser.add_argument('--checkpoint', type=str)
     parser.add_argument('--mode', type=str)
-    
-    # parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
-    # parser.add_argument('--channel-only', dest='channel_only', action='store_true', help='only display the predicted channel')
-    # parser.add_argument('--grayscale', dest='grayscale', action='store_true', help='when channel-only, display channel in grayscale')
+    parser.add_argument('--checkpoint', type=str)
+    parser.add_argument('--compare', action='store_true')
     
     args = parser.parse_args()
     
     DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     
-    # model_configs = {
-    #     'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
-    #     'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
-    #     'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
-    #     'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
-    # }
-    
-    # model = RGBAnything(**model_configs[args.encoder])
     model = ColorAnything(mode=args.mode)
     model.load_state_dict(torch.load(f'checkpoints/{args.mode}/{args.checkpoint}.pth', map_location='cpu'))
     model = model.to(DEVICE).eval()
@@ -46,27 +35,22 @@ if __name__ == '__main__':
             filenames = [args.img_path]
     else:
         filenames = glob.glob(os.path.join(args.img_path, '**/*'), recursive=True)
-    print(filenames)
+    # print(filenames)
     os.makedirs(args.outdir, exist_ok=True)
     
-    # cmap = matplotlib.colormaps.get_cmap('Spectral_r')
     
     for k, filename in enumerate(filenames):
         print(f'Progress {k+1}/{len(filenames)}: {filename}')
         
         raw_img = cv2.imread(filename)
-        
         img = model.infer_image(raw_img, args.input_size)
-    
-        split_region = np.ones((raw_img.shape[0], 50, 3), dtype=np.uint8) * 255
-        combined_result = cv2.hconcat([raw_img, split_region, img])
+        if args.compare:
         
-        cv2.imwrite(os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png'), combined_result)
-        
-        # if args.pred_only:
-            # cv2.imwrite(os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png'), depth)
-        # else:
-            # split_region = np.ones((raw_image.shape[0], 50, 3), dtype=np.uint8) * 255
-            # combined_result = cv2.hconcat([raw_image, split_region, depth])
+            split_region = np.ones((raw_img.shape[0], 50, 3), dtype=np.uint8) * 255
+            combined_result = cv2.hconcat([raw_img, split_region, img])
             
-            # cv2.imwrite(os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png'), combined_result)
+            cv2.imwrite(os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png'), combined_result)
+        else:
+            if args.output_size != 0:
+                img = cv2.resize(img, (args.output_size, args.output_size), interpolation=cv2.INTER_CUBIC)
+            cv2.imwrite(os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png'), img)
