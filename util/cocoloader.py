@@ -24,8 +24,8 @@ class COCOColorInversionDataset(Dataset):
     def __getitem__(self, idx):
 
         img_path = os.path.join(self.img_dir, self.img_names[idx])
-        img = cv2.imread(img_path)
-        img = cv2.resize(img, (self.input_size, self.input_size), interpolation=cv2.INTER_CUBIC) # to input size
+        raw_img = cv2.imread(img_path)
+        img = cv2.resize(raw_img, (self.input_size, self.input_size), interpolation=cv2.INTER_CUBIC) # to input size
 
         if self.mode == 'rgb':
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # to rgb
@@ -43,7 +43,7 @@ class COCOColorInversionDataset(Dataset):
             grey = torch.from_numpy(img[:, :, 0]).float().unsqueeze(dim=0)
             label = torch.from_numpy(img[:, :, (1, 2)]).permute(2, 0, 1).float()
 
-        return grey, label
+        return grey, label, img
     
 def cocoloader(img_dir, batch_size=16, shuffle=True, num_workers=4, input_size=224, mode='rgb'):
     dataset = COCOColorInversionDataset(img_dir, input_size=input_size, mode=mode)

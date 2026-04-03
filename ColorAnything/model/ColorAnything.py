@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from .encoder_decoder import build_depther
-from dinov3_loader import dinov3_pretrained
+from ..dinov3_loader import dinov3_pretrained
 from torchvision.transforms import Compose
 from .util.transform import Resize, NormalizeImage, PrepareForNet
 import cv2

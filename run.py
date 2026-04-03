@@ -5,7 +5,7 @@ import numpy as np
 import os
 import torch
 
-from model.ColorAnything import ColorAnything
+from ColorAnything.model.ColorAnything import ColorAnything
 
 
 if __name__ == '__main__':

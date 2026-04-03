@@ -1,5 +1,6 @@
 ftfy
 ipython
+lpips
 matplotlib
 matplotlib-inline
 numpy
@@ -12,6 +13,7 @@ pytorch-fid
 regex
 requests
 scikit-learn
+scikit-image
 scipy
 submitit
 termcolor

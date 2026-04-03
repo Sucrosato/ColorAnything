@@ -1,8 +1,8 @@
 import torch
 from torch import nn
-import d2l
-from cocoloader import cocoloader
-from model.ColorAnything import ColorAnything
+from util import d2l
+from util.cocoloader import cocoloader
+from ColorAnything.model.ColorAnything import ColorAnything
 import os
 from matplotlib import pyplot as plt
 import argparse
@@ -12,12 +12,55 @@ from pytorch_fid import fid_score
 import cv2
 import numpy as np
 import logging
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+import lpips
 
 train_path = {'linux': '/public/Data/coco/images/train2017',
               'windows': 'E:/work/Code/ColorAnything/data/train_small'}
 test_path = {'linux': '/public/Data/coco/images/test2017',
               'windows': 'E:/work/Code/ColorAnything/data/test_small'}
 
+
+def calculate_lpips(img1_bgr, img2_bgr, use_gpu=True):
+    """
+    计算两张 BGR 图片的 LPIPS 距离
+    :param img1_bgr: numpy array, shape (224, 224, 3), dtype=uint8
+    :param img2_bgr: numpy array, shape (224, 224, 3), dtype=uint8
+    :return: float, LPIPS 距离 (越小越相似)
+    """
+    
+    def preprocess(img):
+        # BGR -> RGB
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # [0, 255] -> [0, 1]
+        img = img.astype(np.float32) / 255.0
+        
+        # [0, 1] -> [-1, 1] (LPIPS 官方要求的输入范围)
+        img = img * 2.0 - 1.0
+        
+        # (H, W, C) -> (C, H, W)
+        img = np.transpose(img, (2, 0, 1))
+        
+        # 增加 Batch 维度: (1, C, H, W)
+        img = torch.from_numpy(img).unsqueeze(0)
+        return img
+
+    # 预处理图片
+    t1 = preprocess(img1_bgr)
+    t2 = preprocess(img2_bgr)
+
+    # 如果使用 GPU
+    if use_gpu and torch.cuda.is_available():
+        t1 = t1.cuda()
+        t2 = t2.cuda()
+        loss_fn_alex.cuda()
+
+    # 计算距离
+    with torch.no_grad():
+        dist = loss_fn_alex(t1, t2)
+    
+    return dist.item()
 
 def calculate_colorfulness(image_bgr):
     """
@@ -97,36 +140,46 @@ def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs, platform,
     Defined in :numref:`sec_image_augmentation`"""
     timer, num_batches = d2l.Timer(), len(train_iter)
     net = nn.DataParallel(net, device_ids=devices).to(devices[0])
-    train_loss, test_colorfulness, test_fid = [], [], []
+    train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fid = [], [], [], [], [], []
     for epoch in range(num_epochs):
-        # Sum of training loss, sum of training accuracy, no. of examples,
-        # no. of predictions
         metric = d2l.Accumulator(4)
-        for i, (features, labels) in enumerate(train_iter):
+        for i, (features, labels, raw_img) in enumerate(train_iter):
             timer.start()
             l, acc = train_batch_ch13(
                 net, features, labels, loss, trainer, devices)
             metric.add(l, acc, labels.shape[0], 0)
             timer.stop()
-        # test_acc = d2l.evaluate_accuracy_gpu(net, test_iter)
+
         with torch.no_grad():
-            # 测试集fid分数 #
             batch_size = next(iter(test_iter))[0].shape[0]
-            colorfulness_metric = d2l.Accumulator(2)
-            for i, (x, _) in enumerate(test_iter):
+            test_metric = d2l.Accumulator(5)
+            for i, (x, y, img) in enumerate(test_iter):
                 x = x.to('cuda')
                 pred = net(x)
                 synth = torch.concatenate((x, pred), axis=1)
                 synth = torch.permute(synth, (0, 2, 3, 1))
                 synth = torch.clamp(synth, 0.0, 1.0) * 255
                 synth = synth.detach().cpu().numpy().astype('uint8')
-                for j, img_lab in enumerate(synth):
-                    img_bgr = cv2.cvtColor(img_lab, cv2.COLOR_Lab2BGR)
-                    colorfulness = calculate_colorfulness(img_bgr)
-                    colorfulness_metric.add(1, colorfulness)
 
-                    img_resize = cv2.resize(img_bgr, (299, 299), interpolation=cv2.INTER_CUBIC)
-                    cv2.imwrite(f'../data/test_pred/{i * batch_size + j}.png', img_resize)
+
+
+                for j, (img_lab, ori_img) in enumerate(zip(synth, img)):
+                    img_bgr = cv2.cvtColor(img_lab, cv2.COLOR_Lab2BGR)  # pred img of output size
+                    ori_img = ori_img.numpy()
+                    # colorfulness #
+                    colorfulness = calculate_colorfulness(img_bgr)
+                    if args.detail:
+                        psnr = peak_signal_noise_ratio(img_bgr, ori_img, data_range=255)
+                        ssim = structural_similarity(img_bgr, ori_img, channel_axis=-1, data_range=255)
+                        lpips = calculate_lpips(img_bgr, ori_img)
+                    else:
+                        psnr, ssim, lpips = 0, 0, 0
+
+                    test_metric.add(1, colorfulness, psnr, ssim, lpips)
+                    # prepare for FID #
+                    img_inception_size = cv2.resize(img_bgr, (299, 299), interpolation=cv2.INTER_CUBIC) # pred img of Inception input size
+                    cv2.imwrite(f'./data/test_pred/{i * batch_size + j}.png', img_inception_size)
+    
 
                     
                 # synth = np.concatenate((x.detach().cpu().numpy(), pred.detach().cpu().numpy()), axis=1)
@@ -140,23 +193,26 @@ def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs, platform,
                     
                 #     cv2.imwrite(f'../data/test_pred/{i * batch_size + j}.png', pred)
 
-            fid = fid_score.calculate_fid_given_paths(('../data/test_pred/', '../data/test_resized'), batch_size=batch_size, device='cuda:0', dims=2048)
+            fid = fid_score.calculate_fid_given_paths(('./data/test_pred/', './data/test_resized'), batch_size=batch_size, device='cuda:0', dims=2048)
             # #
             train_loss.append(metric[0] / metric[2])
             # train_accs.append(metric[1] / metric[3])
-            test_colorfulness.append(colorfulness_metric[1] / colorfulness_metric[0])
+            test_colorfulness.append(test_metric[1] / test_metric[0])
+            test_psnr.append(test_metric[2] / test_metric[0])
+            test_ssim.append(test_metric[3] / test_metric[0])
+            test_lpips.append(test_metric[4] / test_metric[0])
             test_fid.append(fid)
 
 
         
     print(f'loss {metric[0] / metric[2]:.3f}\n'
-          f'test colorfulness score {colorfulness_metric[1] / colorfulness_metric[0]}'
+          f'test colorfulness score {test_metric[1] / test_metric[0]}'
           f'test fid score {fid:.3f}')
     print(f'{metric[2] * num_epochs / timer.sum():.1f} examples/sec on '
           f'{str(devices)}')
     #add
     # return metric[0] / metric[2], metric[1] / metric[3], test_acc
-    return train_loss, test_colorfulness, test_fid
+    return train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fid
 
 if __name__ == '__main__':
 
@@ -166,10 +222,12 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='lab')
     parser.add_argument('--start', type=int, default=0)
     parser.add_argument('--epoch', type=int, default=10)
-    
+    parser.add_argument('--detail', action='store_true')
     args = parser.parse_args()
 
-    log_name = 'logs/' + datetime.now().strftime("%m%d-%H%M%S") + '.log'
+    nowtime = datetime.now().strftime("%m%d-%H%M%S")
+    log_name = 'logs/' + nowtime + '.log'
+
     os.makedirs('logs', exist_ok=True)
     os.makedirs('plt', exist_ok=True)
     os.makedirs('checkpoints', exist_ok=True)
@@ -181,10 +239,14 @@ if __name__ == '__main__':
     )
 
     try:
-        print(datetime.now().strftime("%H:%M:%S"))
+        start_time = datetime.now().strftime("%H:%M:%S")
+        print(start_time)
 
         platform = args.platform
         mode = args.mode
+        
+        if args.detail:        
+            loss_fn_alex = lpips.LPIPS(net='alex')
 
         if platform == 'linux':
             train_iter = cocoloader('/public/Data/coco/images/train2017', batch_size=16, mode=mode) #
@@ -205,9 +267,9 @@ if __name__ == '__main__':
         optimizer = torch.optim.AdamW(net.parameters(), lr=lr)
         # optimizer = get_optimizer(net, 5e-5, 5e-6, 0.001)
 
-        train_loss, test_colorfulness, test_fids = train_ch13(net, train_iter, test_iter, nn.MSELoss(), optimizer, num_epochs, platform, animation=False)
+        train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fids = train_ch13(net, train_iter, test_iter, nn.MSELoss(), optimizer, num_epochs, platform, animation=False)
 
-        print(datetime.now().strftime("%H:%M:%S"))
+        print(start_time, datetime.now().strftime("%H:%M:%S"))
 
         os.makedirs(f'./checkpoints/{mode}', exist_ok=True)
         torch.save(net.state_dict(), f'./checkpoints/{mode}/{start_epoch + num_epochs}.pth')
@@ -218,39 +280,68 @@ if __name__ == '__main__':
             f.write(str(train_loss))
             f.write(str(test_colorfulness))
             f.write(str(test_fids))
-        
+            if args.detail:
+                f.write('\n')
+                f.write(str(test_psnr))
+                f.write(str(test_ssim))
+                f.write(str(test_lpips))
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, train_loss, 'bo-', label='Training Loss')
         plt.title('Loss')
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.grid(True)
-        plt.savefig(f'plt/Loss_{mode}_{num_epochs}.png')
+        plt.savefig(f'plt/{nowtime}_Loss_{mode}_{num_epochs}.png')
         plt.close()
         
         plt.figure(figsize=(8, 5))
-        # plt.plot(epochs, train_accs, 'bo-', label='Training Acc')
         plt.plot(epochs, test_colorfulness, 'ro-', label='Testing Colorfulness')
         plt.title('Colorfulness')
         plt.xlabel('Epochs')
         plt.ylabel('Colorfulness')
         plt.grid(True)
-        plt.savefig(f'plt/Colorfulness_{mode}_{num_epochs}.png')
+        plt.savefig(f'plt/{nowtime}_Colorfulness_{mode}_{num_epochs}.png')
         plt.close()
-
-
+    
         plt.figure(figsize=(8, 5))
-        # plt.plot(epochs, train_accs, 'bo-', label='Training Acc')
         plt.plot(epochs, test_fids, 'ro-', label='Testing FID')
         plt.title('FID')
         plt.xlabel('Epochs')
         plt.ylabel('FID')
         plt.grid(True)
-        plt.savefig(f'plt/FID_{mode}_{num_epochs}.png')
+        plt.savefig(f'plt/{nowtime}_FID_{mode}_{num_epochs}.png')
         plt.close()
+
+        if args.detail:
+            plt.figure(figsize=(8, 5))
+            plt.plot(epochs, test_psnr, 'ro-', label='Testing psnr')
+            plt.title('PSNR')
+            plt.xlabel('Epochs')
+            plt.ylabel('PSNR')
+            plt.grid(True)
+            plt.savefig(f'plt/{nowtime}_PSNR_{mode}_{num_epochs}.png')
+            plt.close()
+
+            plt.figure(figsize=(8, 5))
+            plt.plot(epochs, test_ssim, 'ro-', label='Testing SSIM')
+            plt.title('SSIM')
+            plt.xlabel('Epochs')
+            plt.ylabel('SSIM')
+            plt.grid(True)
+            plt.savefig(f'plt/{nowtime}_SSIM_{mode}_{num_epochs}.png')
+            plt.close()
+
+            plt.figure(figsize=(8, 5))
+            plt.plot(epochs, test_lpips, 'ro-', label='Testing LPIPS')
+            plt.title('LPIPS')
+            plt.xlabel('Epochs')
+            plt.ylabel('LPIPS')
+            plt.grid(True)
+            plt.savefig(f'plt/{nowtime}_LPIPS_{mode}_{num_epochs}.png')
+            plt.close()
+
 
         print('done.')
     
     except Exception as e:
-        # exc_info=True 会自动把完整的报错堆栈写入日志
         logging.error("error caught", exc_info=True)

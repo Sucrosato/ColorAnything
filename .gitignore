@@ -6,6 +6,7 @@ __pycache__/
 checkpoints/
 examples/
 example_output/
+examples_resized/
 ColorAnything/dinov3/notebooks/
 *.log
 *.png
