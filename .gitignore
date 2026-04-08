@@ -11,3 +11,4 @@ ColorAnything/dinov3/notebooks/
 *.log
 *.png
 *.jpg
+tests/

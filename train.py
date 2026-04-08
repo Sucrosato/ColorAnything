@@ -275,7 +275,7 @@ if __name__ == '__main__':
         torch.save(net.state_dict(), f'./checkpoints/{mode}/{start_epoch + num_epochs}.pth')
 
 
-        epochs = range(1, num_epochs+1)
+        epochs = range(start_epoch+1, start_epoch+num_epochs+1)
         with open(log_name, 'a+', encoding='utf-8') as f:
             f.write(str(train_loss))
             f.write(str(test_colorfulness))
@@ -291,7 +291,7 @@ if __name__ == '__main__':
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.grid(True)
-        plt.savefig(f'plt/{nowtime}_Loss_{mode}_{num_epochs}.png')
+        plt.savefig(f'plt/{nowtime}_Loss_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
         plt.close()
         
         plt.figure(figsize=(8, 5))
@@ -300,7 +300,7 @@ if __name__ == '__main__':
         plt.xlabel('Epochs')
         plt.ylabel('Colorfulness')
         plt.grid(True)
-        plt.savefig(f'plt/{nowtime}_Colorfulness_{mode}_{num_epochs}.png')
+        plt.savefig(f'plt/{nowtime}_Colorfulness_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
         plt.close()
     
         plt.figure(figsize=(8, 5))
@@ -309,7 +309,7 @@ if __name__ == '__main__':
         plt.xlabel('Epochs')
         plt.ylabel('FID')
         plt.grid(True)
-        plt.savefig(f'plt/{nowtime}_FID_{mode}_{num_epochs}.png')
+        plt.savefig(f'plt/{nowtime}_FID_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
         plt.close()
 
         if args.detail:
@@ -319,7 +319,7 @@ if __name__ == '__main__':
             plt.xlabel('Epochs')
             plt.ylabel('PSNR')
             plt.grid(True)
-            plt.savefig(f'plt/{nowtime}_PSNR_{mode}_{num_epochs}.png')
+            plt.savefig(f'plt/{nowtime}_PSNR_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
             plt.close()
 
             plt.figure(figsize=(8, 5))
@@ -328,7 +328,7 @@ if __name__ == '__main__':
             plt.xlabel('Epochs')
             plt.ylabel('SSIM')
             plt.grid(True)
-            plt.savefig(f'plt/{nowtime}_SSIM_{mode}_{num_epochs}.png')
+            plt.savefig(f'plt/{nowtime}_SSIM_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
             plt.close()
 
             plt.figure(figsize=(8, 5))
@@ -337,7 +337,7 @@ if __name__ == '__main__':
             plt.xlabel('Epochs')
             plt.ylabel('LPIPS')
             plt.grid(True)
-            plt.savefig(f'plt/{nowtime}_LPIPS_{mode}_{num_epochs}.png')
+            plt.savefig(f'plt/{nowtime}_LPIPS_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
             plt.close()
 
 
