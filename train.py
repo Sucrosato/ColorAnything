@@ -14,12 +14,17 @@ import numpy as np
 import logging
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import lpips
+from util.loss import color_mse_loss
 
-train_path = {'linux': '/public/Data/coco/images/train2017',
+train_paths = {'linux': '/public/Data/coco/images/train2017',
+              'linux-small': '/public/home/lyzhao/dychen/data/train_small',
               'windows': 'E:/work/Code/ColorAnything/data/train_small'}
-test_path = {'linux': '/public/Data/coco/images/test2017',
+test_paths = {'linux': '/public/Data/coco/images/test2017',
+             'linux-small': '/public/home/lyzhao/dychen/data/test_small',
               'windows': 'E:/work/Code/ColorAnything/data/test_small'}
-
+batch_sizes = {'linux': 16,
+               'linux-small': 8,
+               'windows': 4}
 
 def calculate_lpips(img1_bgr, img2_bgr, use_gpu=True):
     """
@@ -248,13 +253,15 @@ if __name__ == '__main__':
         if args.detail:        
             loss_fn_alex = lpips.LPIPS(net='alex')
 
-        if platform == 'linux':
-            train_iter = cocoloader('/public/Data/coco/images/train2017', batch_size=16, mode=mode) #
-            test_iter = cocoloader('/public/Data/coco/images/test2017', batch_size=16, mode=mode) #
-        elif platform == 'windows':
-            train_iter = cocoloader('E:/work/Code/ColorAnything/data/train_small', batch_size=4, mode=mode) #
-            test_iter = cocoloader('E:/work/Code/ColorAnything/data/test_small', batch_size=4, mode=mode) #
+        # if platform == 'linux':
+        #     train_iter = cocoloader('/public/Data/coco/images/train2017', batch_size=16, mode=mode) #
+        #     test_iter = cocoloader('/public/Data/coco/images/test2017', batch_size=16, mode=mode) #
+        # elif platform == 'windows':
+        #     train_iter = cocoloader('E:/work/Code/ColorAnything/data/train_small', batch_size=4, mode=mode) #
+        #     test_iter = cocoloader('E:/work/Code/ColorAnything/data/test_small', batch_size=4, mode=mode) #
 
+        train_iter = cocoloader(train_paths[platform], batch_size=batch_sizes[platform], mode=mode) #
+        test_iter = cocoloader(test_paths[platform], batch_size=batch_sizes[platform], mode=mode) #
         net = ColorAnything(platform=platform, mode=mode)
         net.to('cuda')
 
@@ -267,7 +274,7 @@ if __name__ == '__main__':
         optimizer = torch.optim.AdamW(net.parameters(), lr=lr)
         # optimizer = get_optimizer(net, 5e-5, 5e-6, 0.001)
 
-        train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fids = train_ch13(net, train_iter, test_iter, nn.MSELoss(), optimizer, num_epochs, platform, animation=False)
+        train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fids = train_ch13(net, train_iter, test_iter, color_mse_loss, optimizer, num_epochs, platform, animation=False)
 
         print(start_time, datetime.now().strftime("%H:%M:%S"))
 
