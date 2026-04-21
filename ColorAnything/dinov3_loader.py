@@ -7,8 +7,9 @@ def dinov3_pretrained(model_name='vits', platform='windows'):
         REPO_DIR = '/public/home/lyzhao/dychen/ColorAnything/ColorAnything/dinov3'
 
     # if model_name=='vits':
-    model = torch.hub.load(REPO_DIR, 'dinov3_vits16', source='local', weights='E:/work/Code/ColorAnything/ColorAnything/checkpoints/dinov3_vits16_pretrain_lvd1689m-08c60483.pth')
-    if platform=='linux':
+    if platform=='windows':
+        model = torch.hub.load(REPO_DIR, 'dinov3_vits16', source='local', weights='E:/work/Code/ColorAnything/ColorAnything/checkpoints/dinov3_vits16_pretrain_lvd1689m-08c60483.pth')
+    elif platform=='linux' or platform=='linux-small':
         model = torch.hub.load(REPO_DIR, 'dinov3_vits16', source='local', weights='/public/home/lyzhao/dychen/ColorAnything/ColorAnything/checkpoints/dinov3_vits16_pretrain_lvd1689m-08c60483.pth')
         
     old_conv = model.patch_embed.proj
