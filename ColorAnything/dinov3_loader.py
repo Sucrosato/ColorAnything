@@ -2,8 +2,9 @@ import torch
 from torch import nn
 
 def dinov3_pretrained(model_name='vits', platform='windows'):
-    REPO_DIR = 'E:/work/Code/ColorAnything/ColorAnything/dinov3'
-    if platform=='linux':
+    if platform=='windows':
+        REPO_DIR = 'E:/work/Code/ColorAnything/ColorAnything/dinov3'
+    elif platform=='linux' or platform=='linux-small':
         REPO_DIR = '/public/home/lyzhao/dychen/ColorAnything/ColorAnything/dinov3'
 
     # if model_name=='vits':
