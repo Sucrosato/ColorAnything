@@ -118,7 +118,7 @@ def get_optimizer(net, lr_base=5e-5, lr_backbone=5e-6, weight_decay=0.001):
     
     return optimizer
 
-def train_batch_ch13(net, X, y, loss, trainer, devices):
+def train_batch_ch13(net, X, y, loss, trainer, devices, color_weight=0.3):
     """Train for a minibatch with multiple GPUs (defined in Chapter 13).
 
     Defined in :numref:`sec_image_augmentation`"""
@@ -131,41 +131,45 @@ def train_batch_ch13(net, X, y, loss, trainer, devices):
     net.train()
     trainer.zero_grad()
     pred = net(X)
-    l = loss(pred, y)
+    l = loss(pred, y, color_weight=color_weight)
     l.sum().backward()
     trainer.step()
     train_loss_sum = l.sum()
     train_acc_sum = 1 #
     return train_loss_sum, train_acc_sum
 
-def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs, platform, 
-               devices=d2l.try_all_gpus(), animation=False):
+def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs, platform, color_weight=0.3,
+               devices=d2l.try_all_gpus()):
     """Train a model with multiple GPUs (defined in Chapter 13).
 
     Defined in :numref:`sec_image_augmentation`"""
-    timer, num_batches = d2l.Timer(), len(train_iter)
+    timer = d2l.Timer()
     net = nn.DataParallel(net, device_ids=devices).to(devices[0])
-    train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fid = [], [], [], [], [], []
+    train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fid, test_loss = [], [], [], [], [], [], []
     for epoch in range(num_epochs):
+        print(f'epoch {epoch}:')
         metric = d2l.Accumulator(4)
         for i, (features, labels, raw_img) in enumerate(train_iter):
             timer.start()
             l, acc = train_batch_ch13(
-                net, features, labels, loss, trainer, devices)
+                net, features, labels, loss, trainer, devices, color_weight=color_weight)
             metric.add(l, acc, labels.shape[0], 0)
             timer.stop()
 
         with torch.no_grad():
             batch_size = next(iter(test_iter))[0].shape[0]
-            test_metric = d2l.Accumulator(5)
+            test_metric = d2l.Accumulator(6)
             for i, (x, y, img) in enumerate(test_iter):
                 x = x.to('cuda')
+                y = y.to('cuda')
                 pred = net(x)
                 synth = torch.concatenate((x, pred), axis=1)
                 synth = torch.permute(synth, (0, 2, 3, 1))
                 synth = torch.clamp(synth, 0.0, 1.0) * 255
                 synth = synth.detach().cpu().numpy().astype('uint8')
-
+                test_l = loss(pred, y)
+                test_metric.add(0, 0, 0, 0, 0, test_l * len(y))
+                
 
 
                 for j, (img_lab, ori_img) in enumerate(zip(synth, img)):
@@ -180,27 +184,20 @@ def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs, platform,
                     else:
                         psnr, ssim, lpips = 0, 0, 0
 
-                    test_metric.add(1, colorfulness, psnr, ssim, lpips)
+                    test_metric.add(1, colorfulness, psnr, ssim, lpips, 0)
                     # prepare for FID #
                     img_inception_size = cv2.resize(img_bgr, (299, 299), interpolation=cv2.INTER_CUBIC) # pred img of Inception input size
                     cv2.imwrite(f'./data/test_pred/{i * batch_size + j}.png', img_inception_size)
-    
 
-                    
-                # synth = np.concatenate((x.detach().cpu().numpy(), pred.detach().cpu().numpy()), axis=1)
-                # for j, pred in enumerate(synth):
-                #     pred = np.transpose(pred, (1, 2, 0))
-                #     pred = np.clip(pred, 0.0, 1.0)
-                #     pred = (pred*255).astype('uint8') # to [0, 255]
-                #     pred = cv2.resize(pred, (299, 299), interpolation=cv2.INTER_CUBIC)
-                #     # pred = np.concatenate((grey_ori, pred), axis=2)
-                #     pred = cv2.cvtColor(pred, cv2.COLOR_Lab2BGR)
-                    
-                #     cv2.imwrite(f'../data/test_pred/{i * batch_size + j}.png', pred)
+            if platform=='linux-small':
+                refer =  './data/test_resized_small' #
+            else:
+                refer =  './data/test_resized'
+            fid = fid_score.calculate_fid_given_paths(('./data/test_pred/', refer), batch_size=batch_size, device='cuda:0', dims=2048)
 
-            fid = fid_score.calculate_fid_given_paths(('./data/test_pred/', './data/test_resized'), batch_size=batch_size, device='cuda:0', dims=2048)
             # #
             train_loss.append(metric[0] / metric[2])
+            test_loss.append(test_metric[5] / test_metric[0])
             # train_accs.append(metric[1] / metric[3])
             test_colorfulness.append(test_metric[1] / test_metric[0])
             test_psnr.append(test_metric[2] / test_metric[0])
@@ -209,15 +206,16 @@ def train_ch13(net, train_iter, test_iter, loss, trainer, num_epochs, platform,
             test_fid.append(fid)
 
 
+
         
     print(f'loss {metric[0] / metric[2]:.3f}\n'
-          f'test colorfulness score {test_metric[1] / test_metric[0]}'
-          f'test fid score {fid:.3f}')
+          f'test fid score {fid:.3f}\n'
+          f'test colorfulness score {test_metric[1] / test_metric[0]}')
     print(f'{metric[2] * num_epochs / timer.sum():.1f} examples/sec on '
           f'{str(devices)}')
     #add
     # return metric[0] / metric[2], metric[1] / metric[3], test_acc
-    return train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fid
+    return train_loss, test_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fid
 
 if __name__ == '__main__':
 
@@ -227,6 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='lab')
     parser.add_argument('--start', type=int, default=0)
     parser.add_argument('--epoch', type=int, default=10)
+    parser.add_argument('--color-weight', type=float, default=0.3)
     parser.add_argument('--detail', action='store_true')
     args = parser.parse_args()
 
@@ -274,12 +273,12 @@ if __name__ == '__main__':
         optimizer = torch.optim.AdamW(net.parameters(), lr=lr)
         # optimizer = get_optimizer(net, 5e-5, 5e-6, 0.001)
 
-        train_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fids = train_ch13(net, train_iter, test_iter, color_mse_loss, optimizer, num_epochs, platform, animation=False)
+        train_loss, test_loss, test_colorfulness, test_psnr, test_ssim, test_lpips, test_fids = train_ch13(net, train_iter, test_iter, color_mse_loss, optimizer, num_epochs, platform, color_weight=args.color_weight)
 
         print(start_time, datetime.now().strftime("%H:%M:%S"))
 
         os.makedirs(f'./checkpoints/{mode}', exist_ok=True)
-        torch.save(net.state_dict(), f'./checkpoints/{mode}/{start_epoch + num_epochs}.pth')
+        torch.save(net.state_dict(), f'./checkpoints/{mode}/{start_epoch + num_epochs}_{nowtime}.pth')
 
 
         epochs = range(start_epoch+1, start_epoch+num_epochs+1)
@@ -294,11 +293,12 @@ if __name__ == '__main__':
                 f.write(str(test_lpips))
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, train_loss, 'bo-', label='Training Loss')
+        plt.plot(epochs, test_loss, 'ro-', label='Testing Loss')
         plt.title('Loss')
         plt.xlabel('Epochs')
         plt.ylabel('Loss')
         plt.grid(True)
-        plt.savefig(f'plt/{nowtime}_Loss_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
+        plt.savefig(f'plt/{nowtime}_Loss_{mode}_{start_epoch+1}-{num_epochs+start_epoch}.png')
         plt.close()
         
         plt.figure(figsize=(8, 5))
@@ -307,7 +307,7 @@ if __name__ == '__main__':
         plt.xlabel('Epochs')
         plt.ylabel('Colorfulness')
         plt.grid(True)
-        plt.savefig(f'plt/{nowtime}_Colorfulness_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
+        plt.savefig(f'plt/{nowtime}_Colorfulness_{mode}_{start_epoch+1}-{num_epochs+start_epoch}.png')
         plt.close()
     
         plt.figure(figsize=(8, 5))
@@ -316,7 +316,7 @@ if __name__ == '__main__':
         plt.xlabel('Epochs')
         plt.ylabel('FID')
         plt.grid(True)
-        plt.savefig(f'plt/{nowtime}_FID_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
+        plt.savefig(f'plt/{nowtime}_FID_{mode}_{start_epoch+1}-{num_epochs+start_epoch}.png')
         plt.close()
 
         if args.detail:
@@ -326,7 +326,7 @@ if __name__ == '__main__':
             plt.xlabel('Epochs')
             plt.ylabel('PSNR')
             plt.grid(True)
-            plt.savefig(f'plt/{nowtime}_PSNR_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
+            plt.savefig(f'plt/{nowtime}_PSNR_{mode}_{start_epoch+1}-{num_epochs+start_epoch}.png')
             plt.close()
 
             plt.figure(figsize=(8, 5))
@@ -335,7 +335,7 @@ if __name__ == '__main__':
             plt.xlabel('Epochs')
             plt.ylabel('SSIM')
             plt.grid(True)
-            plt.savefig(f'plt/{nowtime}_SSIM_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
+            plt.savefig(f'plt/{nowtime}_SSIM_{mode}_{start_epoch+1}-{num_epochs+start_epoch}.png')
             plt.close()
 
             plt.figure(figsize=(8, 5))
@@ -344,7 +344,7 @@ if __name__ == '__main__':
             plt.xlabel('Epochs')
             plt.ylabel('LPIPS')
             plt.grid(True)
-            plt.savefig(f'plt/{nowtime}_LPIPS_{mode}_{start_epoch}-{num_epochs+start_epoch}.png')
+            plt.savefig(f'plt/{nowtime}_LPIPS_{mode}_{start_epoch+1}-{num_epochs+start_epoch}.png')
             plt.close()
 
 
